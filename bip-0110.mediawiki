@@ -246,9 +246,8 @@ In other words, funds are completely unaffected if:
 * UTXOs in pre-signed transactions that lock funds using Tapleaves that violate the new rules and need to be confirmed ''and'' spent during the deployment can be spent either via the keypath OR by other, expected Tapleaves in the tree.
 
 This proposal does everything possible to try to avoid funds being frozen or lost, but ultimately it is impossible to prove that absolutely no one will be affected.
-It is therefore up to the Bitcoin community to activate these new rules only if they feel that rejecting data storage is worth this tradeoff.
-To prepare for activation, it is recommended that users begin migrating any affected funds now.
-The activation height is fixed in advance by the [[#deployment|deployment parameters]], so all users have the chance to migrate any remaining funds before activation.
+These rules activated with the BLAKE2b upgrade at mainnet height 961,640.
+The activation height was fixed in advance by the [[#deployment|deployment parameters]], so all users had the chance to migrate any affected funds before activation.
 
 
 ===Alternatives / Alsos===
@@ -311,7 +310,7 @@ By restricting the data storage use case as much as possible, this proposal rein
 This clear distinction between mitigating a systemic risk from non-monetary data abuse and interfering with actual monetary use cases provides a strong barrier against future overreach.
 
 The explicitly temporary nature of the softfork further reinforces that this is a targeted intervention to mitigate a specific crisis, not a commitment or proposal of a new direction of development.
-If no further action is taken by you, it will expire in a year.
+Unless extended, it expires one year after activation, on 2027-09-01 on mainnet.
 Even if a followup softfork is proposed for that time, you retain the right to reject it.
 
 '''Doesn't this proposal break user space?'''
@@ -324,7 +323,7 @@ There are a couple of very unlikely scenarios in which funds could theoretically
 
 Under the [[#deployment|flag-day deployment]], these rules begin at the BLAKE2b activation height. Nodes that do not implement the BLAKE2b upgrade do not follow the chain past that height regardless. Relative to nodes that implement the BLAKE2b upgrade but not these rules, these rules remain a soft fork: every block valid under them is valid without them.
 
-If this proposal activates, the Miniscript compiler will need to be modified not to produce scripts that violate the new rules, at least while the new rules are active.
+While these rules are active, the Miniscript compiler needs to avoid producing scripts that violate them.
 
 Users storing arbitrary data in the Bitcoin blockchain should start looking for other places to store their data, such as Nostr, IPFS, BitTorrent, cloud storage, etc, as the Bitcoin network will not support this use case going forward.
 
@@ -471,6 +470,8 @@ Flag-day deployment review: Luke Dashjr, Kyle Santiago, Jason Sopko, Greg Tonosk
 * '''2.0.0''' (2026-11-17):
 ** Replace the versionbits deployment with a flag-day deployment at the BLAKE2b activation height, expiring when the parent block's median time past reaches 2027-09-01 00:00 UTC on mainnet and 2027-04-01 00:00 UTC on testnet4
 ** Remove mandatory signaling
+** The consensus rules themselves and UTXO grandfathering are unchanged
+** Update wording to reflect activation
 ** Retain the versionbits deployment as a historical, superseded subsection
 ** Update the GetBlockTemplate section, reference implementation, and test references
 * '''1.0.0''' (2026-06-25):
