@@ -23,20 +23,31 @@ Coverage:
                   per-input script rules (2-7); the per-output rule (1) still
                   applies to outputs created while active.
 
-This is a Bitcoin Core / Knots functional test; it needs the test framework and
-a built bitcoind, so it is not run from the bips repository. To regenerate and
+This script targets the flag-day deployment: the rules apply from the BLAKE2b
+activation height until the parent block's median-time-past reaches the expiry
+time, with no signaling. On regtest the node is started with
+-testactivationheight=blake2b@<ACTIVATION_HEIGHT> and -rdtsexpiry=<EXPIRY_TIME>
+(without -rdtsexpiry the deployment is unscheduled and the rules never apply).
+The vectors in test-vectors.json were generated and verified against the
+superseded versionbits implementation; this flag-day port has NOT yet been run
+against the flag-day reference implementation.
+
+This is a Bitcoin Knots functional test; it needs the test framework and a
+built bitcoind, so it is not run from the bips repository. To regenerate and
 verify test-vectors.json against the reference implementation:
 
-  1. Check out the reference implementation
-     (https://github.com/dathonohm/bitcoin, branch uasf-modified-bip9) and copy
-     this file into its test/functional/ directory.
+  1. Check out the reference implementation (Bitcoin Knots tag
+     v29.4.1.knots20260508 or v29.4.3.knots20260508) and copy this file into
+     its test/functional/ directory.
   2. Configure and build (this also symlinks the test into the build tree):
        cmake -B build && cmake --build build -j"$(nproc)"
   3. Run it from the build tree (which auto-discovers the test config):
        TEST_VECTOR_OUT=/path/to/test-vectors.json python3 build/test/functional/test-vectors.py
 
-The generator is deterministic, so a successful run reproduces test-vectors.json
-byte-for-byte while re-verifying every case against the node.
+The generator is deterministic, so a successful run should reproduce
+test-vectors.json byte-for-byte (apart from the informational reject_reason
+strings, which come from the node) while re-verifying every case against the
+node.
 """
 
 import json
@@ -74,9 +85,16 @@ from test_framework.util import assert_equal
 
 from test_framework.wallet import MiniWallet, MiniWalletMode
 
-REDUCED_DATA_BIT = 4
-VERSIONBITS_TOP_BITS = 0x20000000
-ACTIVATION_HEIGHT = 432  # with min_activation_height=288 (period 3 start)
+# Flag-day deployment: the rules activate at the BLAKE2b fork height
+# (-testactivationheight=blake2b@ACTIVATION_HEIGHT) and expire once the parent
+# block's median-time-past reaches EXPIRY_TIME (-rdtsexpiry), far in the future.
+ACTIVATION_HEIGHT = 432
+EXPIRY_TIME = 2000000000
+# The coinbase of the first BLAKE2b block must contain the headline. This
+# matches the value used by Knots' own functional tests (feature_rdts.py and
+# feature_reduced_data_*.py); on regtest with no -blake2b_headline the required
+# headline is empty, so including it is harmless either way.
+HEADLINE = b'BLAKE2b functional test headline'
 
 FEE = 1000
 FUND_AMOUNT = 100000
@@ -125,48 +143,64 @@ class ReducedDataTestVectors(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        # start=0, timeout=never, min_activation_height=288, max disabled, active_duration permanent
+        # Schedule the BLAKE2b hardfork, and with it the flag-day deployment,
+        # at ACTIVATION_HEIGHT; expire it far in the future.
         self.extra_args = [[
-            '-vbparams=reduced_data:0:999999999999:288:2147483647:2147483647',
+            f'-testactivationheight=blake2b@{ACTIVATION_HEIGHT}',
+            f'-rdtsexpiry={EXPIRY_TIME}',
             '-acceptnonstdtxn=1',
         ]]
 
     # ---- block helpers -------------------------------------------------------
 
-    def tip_block(self, txs, signal=False):
+    def tip_block(self, txs):
+        """Build and solve a block on the tip: a v1 header below the BLAKE2b
+        fork height, a v2 header (BLAKE2b proof of work) at or above it."""
         node = self.nodes[0]
         tip = node.getbestblockhash()
         height = node.getblockcount() + 1
         block_time = node.getblockheader(tip)['time'] + 1
-        block = create_block(int(tip, 16), create_coinbase(height), ntime=block_time, txlist=txs)
-        if signal:
-            block.nVersion = VERSIONBITS_TOP_BITS | (1 << REDUCED_DATA_BIT)
+        coinbase = create_coinbase(height)
+        if height == ACTIVATION_HEIGHT:
+            # The first BLAKE2b block must carry the headline in its coinbase
+            coinbase.vin[0].scriptSig = CScript(bytes(coinbase.vin[0].scriptSig) + HEADLINE)
+            coinbase.rehash()
+        block = create_block(int(tip, 16), coinbase, ntime=block_time, txlist=txs,
+                             height=height, header_v2=height >= ACTIVATION_HEIGHT)
         add_witness_commitment(block)
         block.solve()
         return block
 
-    def mine(self, count, signal=False):
+    def mine(self, count):
         node = self.nodes[0]
         for _ in range(count):
-            block = self.tip_block([], signal=signal)
+            block = self.tip_block([])
             res = node.submitblock(block.serialize().hex())
             assert res is None, f"submitblock failed: {res}"
             assert_equal(node.getbestblockhash(), block_hash(block))
 
     def rd_status(self):
-        return self.nodes[0].getdeploymentinfo()['deployments']['reduced_data']['bip9']
+        """The flag-day reduced_data entry; 'active' describes the next block."""
+        info = self.nodes[0].getdeploymentinfo()['deployments']['reduced_data']
+        assert_equal(info['type'], 'flagday')
+        assert_equal(info['height'], ACTIVATION_HEIGHT)
+        assert_equal(info['expiry_time'], EXPIRY_TIME)
+        return info
 
     def activate(self):
-        # Mine until ACTIVE, signaling on every block while STARTED so the
-        # threshold is met. Activation height is captured dynamically.
+        # Flag day: no signaling. Mine up to the block before the fork height
+        # (rules not yet applied), check that the next block is the first to
+        # enforce them, then mine the fork block itself.
         node = self.nodes[0]
-        while True:
-            info = self.rd_status()
-            if info['status'] == 'active':
-                break
-            self.mine(1, signal=(info['status'] == 'started'))
-        self.activation_height = self.rd_status()['since']
-        assert node.getblockcount() >= self.activation_height
+        assert node.getblockcount() < ACTIVATION_HEIGHT - 1
+        assert not self.rd_status()['active']
+        self.mine(ACTIVATION_HEIGHT - 1 - node.getblockcount())
+        assert_equal(node.getblockcount(), ACTIVATION_HEIGHT - 1)
+        assert self.rd_status()['active']
+        self.mine(1)  # the BLAKE2b fork block, the first block enforcing the rules
+        assert self.rd_status()['active']
+        self.activation_height = self.rd_status()['height']
+        assert_equal(node.getblockcount(), self.activation_height)
         self.log.info(f"REDUCED_DATA active since height {self.activation_height}")
 
     # ---- funding -------------------------------------------------------------
@@ -201,7 +235,7 @@ class ReducedDataTestVectors(BitcoinTestFramework):
         prevout, so the rewrite does not change script validity.
         """
         node = self.nodes[0]
-        block = self.tip_block([tx], signal=False)
+        block = self.tip_block([tx])
         res = node.submitblock(block.serialize().hex())
         accepted = res is None
         if expect_valid:
