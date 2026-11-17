@@ -28,9 +28,9 @@ activation height until the parent block's median-time-past reaches the expiry
 time, with no signaling. On regtest the node is started with
 -testactivationheight=blake2b@<ACTIVATION_HEIGHT> and -rdtsexpiry=<EXPIRY_TIME>
 (without -rdtsexpiry the deployment is unscheduled and the rules never apply).
-The vectors in test-vectors.json were generated and verified against the
-superseded versionbits implementation; this flag-day port has NOT yet been run
-against the flag-day reference implementation.
+The vectors in test-vectors.json were originally generated and verified against
+the superseded versionbits implementation. This flag-day port reproduces them
+byte-for-byte against Bitcoin Knots v29.4.3.knots20260508.
 
 This is a Bitcoin Knots functional test; it needs the test framework and a
 built bitcoind, so it is not run from the bips repository. To regenerate and
