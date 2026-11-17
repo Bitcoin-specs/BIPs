@@ -9,6 +9,8 @@
   Assigned: 2025-12-03
   License: BSD-3-Clause
   Discussion: https://groups.google.com/g/bitcoindev/c/nOZim6FbuF8
+              FIXME-DATE: FIXME-BITCOIN-DEVEL-THREAD-URL
+  Version: 2.0.0
   Requires: FIXME-BLAKE2B
 </pre>
 
@@ -421,6 +423,7 @@ Using the parent's median time past also makes the rules for the next block know
 ''This subsection is retained as a historical record and is not normative.''
 This versionbits deployment was implemented in Bitcoin Knots 29.3 and 29.4.
 It did not reach ACTIVE on mainnet and was replaced by the [[#flag-day-deployment|flag-day deployment]] above.
+On testnet3 it locked in at height 4961376 and was enforced from height 4963392 through 5015807; testnet3 is not scheduled under the flag-day deployment.
 The text below is as originally specified.
 
 This deployment uses a modified version of BIP9 with the following parameters:
@@ -460,6 +463,8 @@ The FAILED state is never reached because timeout is disabled. EXPIRED is the fi
 ==Credits==
 
 Original draft and advice: Luke-Jr
+
+Flag-day deployment review: Luke Dashjr, Kyle Santiago, Jason Sopko, Greg Tonoski
 
 ==Changelog==
 
