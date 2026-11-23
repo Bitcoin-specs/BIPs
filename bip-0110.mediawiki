@@ -9,6 +9,9 @@
   Assigned: 2025-12-03
   License: BSD-3-Clause
   Discussion: https://groups.google.com/g/bitcoindev/c/nOZim6FbuF8
+              2026-11-19: https://groups.google.com/g/bitcoin-devel/c/1A-CO_eCOv4
+  Version: 2.0.0
+  Requires: FIXME-BLAKE2B
 </pre>
 
 ==Abstract==
@@ -50,7 +53,7 @@ For the purposes of rule 3, these are the witness versions (and the one Tapleaf 
 
 ===GetBlockTemplate===
 
-This deployment uses the GBT deployment name "reduced_data" as defined in [[bip-0009.mediawiki#getblocktemplate_changes|BIP 9]]. During mandatory signaling, the deployment's bit is included in "vbrequired".
+This deployment uses the GBT deployment name "reduced_data". While these rules apply to the block being templated, "reduced_data" is included in the "rules" array, without the "!" prefix defined in [[bip-0009.mediawiki#getblocktemplate_changes|BIP 9]]. The [[#deployment|flag-day deployment]] has no versionbits bit, so the deployment never appears in "vbavailable" or "vbrequired".
 
 ==Motivation==
 
@@ -243,9 +246,8 @@ In other words, funds are completely unaffected if:
 * UTXOs in pre-signed transactions that lock funds using Tapleaves that violate the new rules and need to be confirmed ''and'' spent during the deployment can be spent either via the keypath OR by other, expected Tapleaves in the tree.
 
 This proposal does everything possible to try to avoid funds being frozen or lost, but ultimately it is impossible to prove that absolutely no one will be affected.
-It is therefore up to the Bitcoin community to activate these new rules only if they feel that rejecting data storage is worth this tradeoff.
-To prepare for activation, it is recommended that users begin migrating any affected funds now.
-In the event that these new rules are activated, there will be at least a two-week period between lock-in and activation, during which all users will have the chance to migrate any remaining funds.
+These rules activated with the BLAKE2b upgrade at mainnet height 961,640.
+Users had several months of lead time to migrate any affected funds before activation.
 
 
 ===Alternatives / Alsos===
@@ -308,7 +310,7 @@ By restricting the data storage use case as much as possible, this proposal rein
 This clear distinction between mitigating a systemic risk from non-monetary data abuse and interfering with actual monetary use cases provides a strong barrier against future overreach.
 
 The explicitly temporary nature of the softfork further reinforces that this is a targeted intervention to mitigate a specific crisis, not a commitment or proposal of a new direction of development.
-If no further action is taken by you, it will expire in a year.
+Unless extended, it expires one year after activation, on 2027-09-01 on mainnet.
 Even if a followup softfork is proposed for that time, you retain the right to reject it.
 
 '''Doesn't this proposal break user space?'''
@@ -319,7 +321,9 @@ Pains have been taken to avoid breaking monetary use cases, and it is unlikely t
 
 There are a couple of very unlikely scenarios in which funds could theoretically be frozen or lost. See the Tradeoffs section for more details.
 
-If this proposal activates, the Miniscript compiler will need to be modified not to produce scripts that violate the new rules, at least while the new rules are active.
+Under the [[#deployment|flag-day deployment]], these rules begin at the BLAKE2b activation height. Nodes that do not implement the BLAKE2b upgrade do not follow the chain past that height regardless. Relative to nodes that implement the BLAKE2b upgrade but not these rules, these rules remain a soft fork: every block valid under them is valid without them.
+
+While these rules are active, the Miniscript compiler needs to avoid producing scripts that violate them.
 
 Users storing arbitrary data in the Bitcoin blockchain should start looking for other places to store their data, such as Nostr, IPFS, BitTorrent, cloud storage, etc, as the Bitcoin network will not support this use case going forward.
 
@@ -327,18 +331,108 @@ All other known use cases are not affected.
 
 ==Reference implementation==
 
-https://github.com/bitcoinknots/bitcoin/compare/29.x-knots...dathonohm:bitcoin:uasf-modified-bip9
+The reference implementation is Bitcoin Knots tag [https://github.com/bitcoinknots/bitcoin/commit/8c85b1585dac23f964e2dd32045624de7f02aa58 v29.4.1.knots20260508], principally <code>src/consensus/params.h</code>, <code>src/kernel/chainparams.cpp</code>, <code>src/validation.cpp</code>, <code>src/rpc/blockchain.cpp</code>, and <code>src/rpc/mining.cpp</code>.
+
+Exception:
+the reference implementation of the extended testnet4 expiry is [https://github.com/bitcoinknots/bitcoin/commit/a7c4617524c334f542484bfef3919b9f12573840 v29.4.3.knots20260508].
+v29.4.1.knots20260508 shipped a testnet4 expiry of 1791903600 (2026-10-13 15:00:00 UTC).
+
+In the reference implementation, <code>getdeploymentinfo</code> reports the deployment as <code>reduced_data</code> with type <code>flagday</code>, giving its activation height and <code>expiry_time</code>, and whether the rules apply to the next block.
+On regtest, the deployment is scheduled with <code>-testactivationheight=blake2b@<height></code> together with <code>-rdtsexpiry=<time></code>.
+
+The reference implementation of the [[#superseded-versionbits-deployment|superseded versionbits deployment]] is https://github.com/bitcoinknots/bitcoin/compare/29.x-knots...dathonohm:bitcoin:uasf-modified-bip9
 
 ==Test vectors==
 
 Test coverage specific to these rules is provided by the reference implementation's functional test suite:
 
-* [https://github.com/dathonohm/bitcoin/blob/uasf-modified-bip9/test/functional/feature_rdts.py feature_rdts.py] exercises all seven consensus rules, including their boundaries and the script-type exemptions to rule 2 (BIP16 redeemScripts, witness scripts, and Tapleaf scripts).
-* [https://github.com/dathonohm/bitcoin/blob/uasf-modified-bip9/test/functional/feature_reduced_data_utxo_height.py feature_reduced_data_utxo_height.py] covers the grandfathering of UTXOs created before the activation height.
+* [https://github.com/bitcoinknots/bitcoin/blob/v29.4.1.knots20260508/test/functional/feature_rdts.py feature_rdts.py] exercises all seven consensus rules, including their boundaries and the script-type exemptions to rule 2 (BIP16 redeemScripts, witness scripts, and Tapleaf scripts).
+* [https://github.com/bitcoinknots/bitcoin/blob/v29.4.1.knots20260508/test/functional/feature_reduced_data_utxo_height.py feature_reduced_data_utxo_height.py] covers the grandfathering of UTXOs created before the activation height.
+* [https://github.com/bitcoinknots/bitcoin/blob/v29.4.1.knots20260508/test/functional/feature_reduced_data_temporary_deployment.py feature_reduced_data_temporary_deployment.py] covers activation at the BLAKE2b activation height and expiry at the median-time-past boundary.
 
-In addition, a set of transaction-level test vectors generated and verified against the reference implementation is provided in [[bip-0110/test-vectors.json|test-vectors.json]]. Each vector gives the spent output(s), the spending (or output-creating) transaction, and whether a block containing it is valid while these rules are active; the <code>rule</code> and <code>spent_utxo</code> fields identify which numbered rule is exercised and whether the spent UTXO is grandfathered. These vectors were produced by [[bip-0110/test-vectors.py|test-vectors.py]], which submits each case to a regtest node enforcing the rules and emits the verified result; see that file for reproduction instructions.
+In addition, a set of transaction-level test vectors is provided in [[bip-0110/test-vectors.json|test-vectors.json]]. Each vector gives the spent output(s), the spending (or output-creating) transaction, and whether a block containing it is valid while these rules are active; the <code>rule</code> and <code>spent_utxo</code> fields identify which numbered rule is exercised and whether the spent UTXO is grandfathered. The vectors were produced by [[bip-0110/test-vectors.py|test-vectors.py]], which submits each case to a regtest node enforcing the rules and emits the verified result; see that file for reproduction instructions. They were originally generated and verified against the reference implementation of the superseded versionbits deployment. The rules are unchanged by the flag-day deployment, so the vectors apply to it as well. The script has since been ported to the flag-day deployment (scheduling it with <code>-testactivationheight=blake2b@<height></code> and <code>-rdtsexpiry=<time></code>, and mining across the activation height instead of signaling), and reproduces the vectors byte-for-byte against Bitcoin Knots v29.4.3.knots20260508.
 
 ==Deployment==
+
+These rules are deployed by flag day at the BLAKE2b activation height, as defined in [https://github.com/luke-jr/bips/blob/bip-blake2b-pow/bip-blake2b-pow.mediawiki the BLAKE2b proof-of-work BIP], and expire at a median-time-past.
+This flag-day deployment replaces the [[#superseded-versionbits-deployment|versionbits deployment]] originally specified by this BIP, which never reached ACTIVE on mainnet.
+
+<span id="flag-day-deployment"></span>
+===Flag-day deployment===
+
+A deployment of this specification defines:
+
+* '''name''': reduced_data
+* '''activation_height''': the BLAKE2b activation height
+* '''expiry_time''': a Unix timestamp, interpreted as median time past
+
+The rules in the [[#specification|Specification]] apply to a block if and only if:
+
+<pre>
+block_height >= activation_height
+and parent_median_time_past < expiry_time
+</pre>
+
+where <code>parent_median_time_past</code> is the median time past of the block's parent.
+The activation height is also the [[#utxo-grandfathering|UTXO grandfathering]] boundary: inputs spending UTXOs created at a height below <code>activation_height</code> are exempt.
+
+There is no lock-in period, and no signaling from the activation height onward.
+The deployment does not use a versionbits bit.
+
+For mainnet:
+
+<pre>
+activation_height = 961640
+expiry_time       = 1819756800  # 2027-09-01 00:00:00 UTC
+</pre>
+
+For testnet4:
+
+<pre>
+activation_height = 150308
+expiry_time       = 1806537600  # 2027-04-01 00:00:00 UTC
+</pre>
+
+The deployment is not scheduled on other test networks.
+Regtest defaults to unscheduled unless explicitly configured.
+
+The [https://github.com/chrisguida/bips/blob/bip-reduced-block-weight/bip-reduced-block-weight.mediawiki Temporary Reduced Block Weight Limit] proposal is a separate deployment that shares these deployment parameters.
+It is not part of this BIP.
+
+<span id="mandatory-signaling"></span>
+'''Mandatory signaling (mainnet heights 961632 to 961639)'''
+
+On mainnet, a block at any height from 961632 through 961639 is invalid unless it signals versionbits bit 4, that is, unless the top three bits of its version are <code>001</code> and bit 4 is set.
+These are the blocks of the [[#superseded-versionbits-deployment|superseded versionbits deployment]]'s mandatory signaling period that precede the activation height.
+The rule remains normative: it is what separates this chain from the chain that did not signal, from block 961632 onward, and without it that chain's blocks below the activation height would be valid ancestors for a competing BLAKE2b chain.
+Implementations may enforce it by checkpointing the blocks at heights 961632 and 961639.
+There is no signaling requirement at or above the activation height, or on other networks.
+
+'''Why activate at the BLAKE2b activation height?'''
+
+The versionbits deployment was due to activate at height 965664, but block production on the chain enforcing it stalled during the mandatory signaling period, so it could not reach ACTIVE in reasonable time.
+From the activation height, the proof-of-work change separates the upgraded chain from the one continuing under SHA256d, so no further mandatory signaling is needed; the [[#mandatory-signaling|mandatory signaling]] already enforced below the activation height is retained.
+Activating at the same height means the two deployments cannot be scheduled apart, and the UTXO grandfathering boundary coincides with both.
+
+'''Why does the deployment expire at a time rather than a height?'''
+
+Following a proof-of-work change, the rate at which blocks will be found is uncertain, at least initially.
+An expiry time preserves the previous schedule's approximately one year of enforcement regardless of the block rate.
+It is a fixed date: had the BLAKE2b upgrade activated later, the enforcement window would have been correspondingly shorter.
+
+'''Why use the parent's median time past for expiry?'''
+
+Median time past is monotone along a chain, so the deployment cannot alternate between enforced and not enforced.
+Using the parent's median time past also makes the rules for the next block knowable before the block is constructed.
+
+<span id="superseded-versionbits-deployment"></span>
+===Superseded versionbits deployment===
+
+''This subsection is retained as a historical record and is not normative, except for mandatory signaling at mainnet heights 961632 to 961639, which is restated as a [[#mandatory-signaling|normative rule]] above.''
+This versionbits deployment was implemented in Bitcoin Knots 29.3 and 29.4.
+It did not reach ACTIVE on mainnet and was replaced by the [[#flag-day-deployment|flag-day deployment]] above.
+On testnet3 it locked in at height 4961376 and was enforced from height 4963392 through 5015807; testnet3 is not scheduled under the flag-day deployment.
+The text below is as originally specified.
 
 This deployment uses a modified version of BIP9 with the following parameters:
 
@@ -351,7 +445,7 @@ This deployment uses a modified version of BIP9 with the following parameters:
 * '''active_duration''': 52416 blocks (~1 year after activation)
 * '''threshold''': 1109/2016 (55%)
 
-===Deviations from BIP9===
+====Deviations from BIP9====
 
 This deployment deviates from standard BIP9 in five ways:
 
@@ -372,12 +466,23 @@ This deployment deviates from standard BIP9 in five ways:
 
 The FAILED state is never reached because timeout is disabled. EXPIRED is the final state; there are no transitions after it. Miner signaling after expiry has no effect because the deployment is no longer in the STARTED state, and miner signaling only governs the STARTED -> LOCKED_IN transition.
 
+'''GetBlockTemplate''': This deployment uses the GBT deployment name "reduced_data" as defined in [[bip-0009.mediawiki#getblocktemplate_changes|BIP 9]]. During mandatory signaling, the deployment's bit is included in "vbrequired".
+
 ==Credits==
 
 Original draft and advice: Luke-Jr
 
+Flag-day deployment review: Luke Dashjr, Kyle Santiago, Jason Sopko, Greg Tonoski
+
 ==Changelog==
 
+* '''2.0.0''' (2026-11-17):
+** Replace the versionbits deployment with a flag-day deployment at the BLAKE2b activation height, expiring when the parent block's median time past reaches 2027-09-01 00:00 UTC on mainnet and 2027-04-01 00:00 UTC on testnet4
+** Keep mandatory signaling normative for mainnet heights 961632 to 961639, the part of the mandatory signaling period below the activation height; remove it from the activation height onward
+** The consensus rules themselves and UTXO grandfathering are unchanged
+** Update wording to reflect activation
+** Retain the versionbits deployment as a historical, superseded subsection
+** Update the GetBlockTemplate section, reference implementation, and test references
 * '''1.0.0''' (2026-06-25):
 ** Advance to Complete
 * '''0.0.4''' (2026-02-04):
